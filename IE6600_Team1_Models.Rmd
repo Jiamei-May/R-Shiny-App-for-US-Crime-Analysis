@@ -1,0 +1,147 @@
+---
+title: 'IE6600 Team 1 Project Models: SVM & Linear Regression'
+output:
+  pdf_document: default
+  html_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(e1071)
+library(ISLR)
+library(Metrics)
+dataset <- read.csv("www/data/crimedata.csv",fileEncoding="latin1")
+#keep only columns needed
+dataset1 <- dataset[,c(1,2,5,6,7,8,9,10,11,12,13,14,15,17,18,25,27,28,29,30,31,
+                       32,34,35,36,37,38,39,48,66,67,69,73,74,75,78,97,98,130,131,
+                       132,133,134,135,136,137,138,139,140,141,142,143,144,145,146,147)]
+#change to all numeric
+for (i in c(41:56)){
+  dataset1[,i] = data.frame(apply(dataset1[i], 2, as.numeric))}
+dataset1[,"OtherPerCap"] <- as.numeric(dataset1[,"OtherPerCap"])
+#change column name
+names(dataset1)[1] <- "community"
+drops <- c("community","state","fold")
+#missing value all to 0
+dataset1[is.na(dataset1)] <- 0
+dataset1[dataset1 == "?"] <- 0
+head(dataset1)
+df.working <- dataset1[, !(names(dataset1) %in% drops)]
+head(df.working)
+
+
+################set seed and train ind#####################
+set.seed(1)
+train_ind = sample(1:nrow(df.working), 0.7 * nrow(df.working))
+normalize <- function(x) {
+    return((x - min(x))/(max(x) - min(x)))
+}
+df.working_dt <- df.working
+notneededFeatures <- c("PctSpeakEnglOnlyCat", "PctNotSpeakEnglWellCat", 
+    "PctHousOccupCat", "RentQrange")
+possible_predictors = colnames(df.working)[!(colnames(df.working) %in% 
+    notneededFeatures)]
+df.working = df.working[, names(df.working) %in% possible_predictors]
+df.norm <- as.data.frame(lapply(df.working, normalize))
+#############################
+
+
+
+####################SVM#################
+model_svmradial.cv <- tune.svm(ViolentCrimesPerPop ~ ., data = df.norm[train_ind,], kernel = "radial", gamma = c(5e-04, 0.001, 0.002), cost = c(1.75,2, 2.25, 2.5, 2.75))
+
+summary(model_svmradial.cv)
+
+model_svmradial.tuned <- svm(ViolentCrimesPerPop ~ ., data = df.norm[train_ind, 
+    ], kernel = "radial", gamma = model_svmradial.cv$best.parameters$gamma, 
+    cost = model_svmradial.cv$best.parameters$cost)
+
+summary(model_svmradial.tuned)
+
+y_hat = predict(model_svmradial.tuned, df.norm[-train_ind, -52])
+MSE_SVM = mse(df.norm[-train_ind, 52], y_hat)
+
+residul <- df.norm[-train_ind, 52]-y_hat
+new_predict <- (y_hat)*(max(df.working$ViolentCrimesPerPop)-min(df.working$ViolentCrimesPerPop))+min(df.working$ViolentCrimesPerPop)
+
+yy_hat <- data.frame("Predicted"=new_predict,"Actual"=df.working[-train_ind,52],
+                     "Residuals"=residul)
+MSE_SVM
+head(yy_hat)
+
+
+accuracy(df.norm[-train_ind, 52], y_hat)
+typeof(df.norm[-train_ind, 52])
+
+
+plot(model_svmradial.cv, cex = 0.6)
+
+
+```
+
+```{r}
+#Multi-Linear Regression
+#clean data
+dataset2 <- dataset[,-c(1:5)]
+dataset2[dataset2 == "?"] <- NA
+
+#find columns with NA
+#names(which(sapply(dataset2, function(x) any(is.na(x)))))
+                       
+dataset4 <- dataset2[,c("NumUnderPov","PctLess9thGrade","PctUnemployed","NumInShelters",
+                       "PctBornSameState","rapesPerPop","robbbPerPop","assaultPerPop",
+                       "ViolentCrimesPerPop")] 
+
+for (i in 1:length(dataset4)){
+  dataset4[,i] = data.frame(apply(dataset4[i], 2, as.numeric))}
+
+library(zoo)
+# na.aggregate(dataset4)
+# replace NA with mean
+NA2mean <- function(x) replace(x, is.na(x), mean(x, na.rm = TRUE))
+head(replace(dataset4, TRUE, lapply(dataset4, NA2mean)))
+dataset4[] <- lapply(dataset4, NA2mean)
+
+#length(dataset4)
+
+set.seed(11)
+train_index <- sample(1:nrow(dataset4), 0.8*nrow(dataset4))
+normalize <- function(x){
+  return((x-min(x))/(max(x) - min(x)))
+ }
+d4_norm <- as.data.frame(lapply(dataset4, normalize))
+train_lm <- d4_norm[train_index,]
+test_lm <- d4_norm[-train_index,]
+ 
+# train_lm <- dataset2[train_index,]
+# test_lm <- dataset2[-train_index,]
+
+lm_fit <- lm(ViolentCrimesPerPop ~ ., data = train_lm)
+sm <- summary(lm_fit)
+sse <- sum(sm$residuals^2)
+mse <- mean(sm$residuals^2)
+
+y_hat1 <- predict(lm_fit, test_lm[,-9])
+residuls1 <- test_lm$ViolentCrimesPerPop-y_hat1
+
+y_y_hat <- data.frame("Predicted" = y_hat1, 
+                      "Actual" =test_lm$ViolentCrimesPerPop, 
+                      "Residul" = residuls1)
+
+
+new_predict <- (y_hat1)*(max(dataset4$ViolentCrimesPerPop)-min(dataset4$ViolentCrimesPerPop))+min(dataset4$ViolentCrimesPerPop)
+
+library(forecast)
+accuracy(y_hat1, test_lm$ViolentCrimesPerPop)
+sm
+mse
+head(new_predict)
+
+```
+
+```{r}
+
+```
